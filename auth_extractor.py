@@ -21,7 +21,7 @@ import sys
 from pathlib import Path
 
 from playwright.async_api import async_playwright, Page, BrowserContext
-from playwright_stealth import stealth_async
+from playwright_stealth import Stealth
 
 
 # ─── Constants ────────────────────────────────────────────────────────────────
@@ -85,6 +85,9 @@ async def inject_save_button(page: Page) -> None:
 
 async def inject_status_banner(page: Page, message: str, color: str = "#38b249") -> None:
     """Show a top-of-page status banner."""
+    # Escape single quotes to avoid breaking JS string literals
+    safe_message = message.replace("'", "\\'")
+    safe_color = color.replace("'", "\\'")
     await page.evaluate(f"""
     () => {{
         let banner = document.getElementById('__session_banner');
@@ -104,9 +107,9 @@ async def inject_status_banner(page: Page, message: str, color: str = "#38b249")
             `;
             document.body.appendChild(banner);
         }}
-        banner.style.background = '{color}';
+        banner.style.background = '{safe_color}';
         banner.style.color = '#fff';
-        banner.innerText = '{message}';
+        banner.innerText = '{safe_message}';
     }}
     """)
 
@@ -176,7 +179,12 @@ async def run(account: int, output: str | None) -> None:
     print(f"  📦  Output → {out_path}")
     print(f"{'='*60}\n")
 
-    async with async_playwright() as p:
+    stealth = Stealth(
+        navigator_languages_override=("th-TH", "th"),
+        navigator_platform_override="MacIntel",
+    )
+
+    async with stealth.use_async(async_playwright()) as p:
         # Launch Chromium in headed mode (non-headless)
         browser = await p.chromium.launch(
             headless=False,
@@ -200,9 +208,6 @@ async def run(account: int, output: str | None) -> None:
         )
 
         page = await context.new_page()
-
-        # Apply stealth patches
-        await stealth_async(page)
 
         # Navigate to Lazada login
         print("🌐  Opening Lazada login page…")

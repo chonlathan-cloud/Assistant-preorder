@@ -15,7 +15,7 @@ from fastapi import FastAPI, HTTPException, Request
 
 from worker.config import worker_settings
 from worker.schemas import ExecuteRequest, ExecuteResponse
-from worker.secret_manager import fetch_session
+from worker.storage_manager import fetch_session, upload_screenshot
 from worker.sniper import execute_snipe
 from worker.firestore_logger import log_execution, update_mission_status
 
@@ -66,10 +66,10 @@ async def execute(request: ExecuteRequest):
     Execute a sniper mission for a single account.
 
     Called by Cloud Tasks at the scheduled time.
-    1. Fetch session from Secret Manager
+    1. Fetch session from GCS
     2. Launch headless browser
     3. Navigate, select variants, checkout
-    4. Log results to Firestore
+    4. Upload screenshots to GCS + log results to Firestore
     """
     start_time = time.time()
 
@@ -81,17 +81,28 @@ async def execute(request: ExecuteRequest):
     logger.info(f"{'='*60}\n")
 
     try:
-        # 1. Fetch session from Secret Manager
-        logger.info("🔐 Fetching session from Secret Manager…")
+        # 1. Fetch session from GCS
+        logger.info("🔐 Fetching session from GCS…")
         session_data = fetch_session(request.account_id)
 
         # 2. Execute the snipe
         logger.info("🚀 Launching sniper…")
         result = await execute_snipe(request, session_data)
 
+        # 3. Upload screenshots to GCS
+        gcs_screenshots = []
+        for ss_path in result.screenshots:
+            try:
+                gcs_uri = upload_screenshot(ss_path, request.mission_id, request.account_id)
+                gcs_screenshots.append(gcs_uri)
+            except Exception as e:
+                logger.warning(f"Screenshot upload failed: {e}")
+                gcs_screenshots.append(ss_path)  # keep local path as fallback
+        result.screenshots = gcs_screenshots
+
         duration = time.time() - start_time
 
-        # 3. Log to Firestore
+        # 4. Log to Firestore
         try:
             log_execution(
                 mission_id=request.mission_id,

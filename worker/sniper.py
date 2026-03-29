@@ -4,7 +4,7 @@ Sniper Worker — Core Bot Logic
 Headless Playwright automation for Lazada purchasing.
 
 Flow:
-  1. Load session from Secret Manager
+  1. Load session from GCS
   2. Navigate to product page
   3. Select variant(s) + set quantity
   4. Flash-sale poll (if Buy Now disabled)
@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Any
 
 from playwright.async_api import async_playwright, Page, BrowserContext, Browser
-from playwright_stealth import stealth_async
+from playwright_stealth import Stealth
 
 from worker.config import worker_settings
 from worker.schemas import ExecuteRequest, VariantItem
@@ -302,7 +302,12 @@ async def execute_snipe(
     """
     result = SniperResult()
 
-    async with async_playwright() as p:
+    stealth = Stealth(
+        navigator_languages_override=("th-TH", "th"),
+        navigator_platform_override="MacIntel",
+    )
+
+    async with stealth.use_async(async_playwright()) as p:
         # Launch headless Chromium
         browser: Browser = await p.chromium.launch(
             headless=True,
@@ -311,6 +316,7 @@ async def execute_snipe(
 
         # Create context with stored session
         storage_state = session_data.get("storage_state", {})
+
         context: BrowserContext = await browser.new_context(
             storage_state=storage_state,
             viewport={"width": 1366, "height": 768},
@@ -324,7 +330,6 @@ async def execute_snipe(
         )
 
         page: Page = await context.new_page()
-        await stealth_async(page)
 
         # Inject localStorage if available
         lazada_ls = session_data.get("lazada_local_storage", {})

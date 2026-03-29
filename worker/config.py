@@ -23,9 +23,11 @@ class WorkerSettings(BaseSettings):
     # Firestore
     FIRESTORE_COLLECTION: str = "missions"
 
-    # Secret Manager — session secret names
-    SECRET_ID_ACC_1: str = "LAZ_SESSION_1"
-    SECRET_ID_ACC_2: str = "LAZ_SESSION_2"
+    # GCS — session files & results
+    GCS_BUCKET_NAME: str = "kyc_id_cards"
+    SESSION_FILE_ACC_1: str = "session_acc_1.json"
+    SESSION_FILE_ACC_2: str = "session_acc_2.json"
+    GCS_RESULTS_FOLDER: str = "results"
 
     # Bot tuning
     PAGE_LOAD_TIMEOUT: int = 30000  # ms
@@ -38,19 +40,19 @@ class WorkerSettings(BaseSettings):
     # Screenshots directory (inside container)
     SCREENSHOT_DIR: str = "/tmp/screenshots"
 
-    def get_secret_id(self, account_id: str) -> str:
-        """Map account_id → Secret Manager secret name."""
+    def get_session_blob_name(self, account_id: str) -> str:
+        """Map account_id → GCS blob name for the session file."""
         mapping = {
-            "acc_1": self.SECRET_ID_ACC_1,
-            "acc_2": self.SECRET_ID_ACC_2,
+            "acc_1": self.SESSION_FILE_ACC_1,
+            "acc_2": self.SESSION_FILE_ACC_2,
         }
-        secret_id = mapping.get(account_id)
-        if not secret_id:
+        blob_name = mapping.get(account_id)
+        if not blob_name:
             raise ValueError(
                 f"Unknown account_id '{account_id}'. "
                 f"Expected one of: {list(mapping.keys())}"
             )
-        return secret_id
+        return blob_name
 
 
 worker_settings = WorkerSettings()

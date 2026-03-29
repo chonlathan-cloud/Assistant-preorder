@@ -1,6 +1,6 @@
 # ─────────────────────────────────────────────────────────────
 # Dockerfile.worker — Sniper Worker for Cloud Run
-# Includes Playwright + Chromium in a slim container
+# Includes Playwright + Chromium with GCS-based sessions
 # ─────────────────────────────────────────────────────────────
 
 FROM python:3.12-slim
