@@ -13,6 +13,7 @@ session_acc_*.json
 
 # Environment
 .env
+.worker_url
 
 # OS
 .DS_Store

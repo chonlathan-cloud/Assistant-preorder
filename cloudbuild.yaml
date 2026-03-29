@@ -1,0 +1,51 @@
+# ─────────────────────────────────────────────────────────────
+# cloudbuild.yaml — Cloud Build config for Artifact Registry
+# Builds both preorder-controller and preorder-worker images
+#
+# Usage:
+#   gcloud builds submit --config=cloudbuild.yaml .
+# ─────────────────────────────────────────────────────────────
+
+substitutions:
+  _REGION: asia-southeast1
+  _AR_REPO: preorder
+
+steps:
+  # ── Step 1: Build Controller ──
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-t'
+      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/preorder-controller:${SHORT_SHA}'
+      - '-t'
+      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/preorder-controller:latest'
+      - '-f'
+      - 'Dockerfile'
+      - '.'
+    id: 'build-controller'
+
+  # ── Step 2: Build Worker ──
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-t'
+      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/preorder-worker:${SHORT_SHA}'
+      - '-t'
+      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/preorder-worker:latest'
+      - '-f'
+      - 'Dockerfile.worker'
+      - '.'
+    id: 'build-worker'
+
+# Push both images to Artifact Registry
+images:
+  - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/preorder-controller:${SHORT_SHA}'
+  - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/preorder-controller:latest'
+  - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/preorder-worker:${SHORT_SHA}'
+  - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/preorder-worker:latest'
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  machineType: 'E2_HIGHCPU_8'  # faster build for Playwright image
+
+timeout: '1800s'  # 30min max for worker image (Chromium is large)
