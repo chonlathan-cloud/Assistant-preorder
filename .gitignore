@@ -8,6 +8,12 @@ sessions/
 *.session.json
 session_acc_*.json
 
+# Screenshots (worker output)
+/tmp/screenshots/
+
+# Environment
+.env
+
 # OS
 .DS_Store
 Thumbs.db
