@@ -14,7 +14,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from controller.config import settings
-from controller.schemas import CreateMissionRequest, MissionResponse
+from controller.schemas import CreateMissionRequest, CreateMissionResponse
 from controller.services import schedule_mission, get_all_missions, get_mission_executions, generate_signed_url
 
 # ─── Logging ──────────────────────────────────────────────────────────────────
@@ -86,7 +86,7 @@ async def get_signed_url(path: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/create-mission", response_model=MissionResponse)
+@app.post("/create-mission", response_model=CreateMissionResponse)
 async def create_mission(request: CreateMissionRequest):
     """
     Create a new shopping mission.
