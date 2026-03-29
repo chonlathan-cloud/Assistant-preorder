@@ -5,6 +5,7 @@
 #   ./deploy.sh all          # Build + deploy both services
 #   ./deploy.sh controller   # Build + deploy controller only
 #   ./deploy.sh worker       # Build + deploy worker only
+#   ./deploy.sh frontend     # Build + deploy frontend only
 #   ./deploy.sh build        # Build images only (no deploy)
 # ─────────────────────────────────────────────────────────────
 set -euo pipefail
@@ -22,10 +23,12 @@ AR_BASE="${AR_HOST}/${PROJECT_ID}/${AR_REPO}"
 # Cloud Run services
 CONTROLLER_SERVICE="preorder-controller"
 WORKER_SERVICE="preorder-worker"
+FRONTEND_SERVICE="preorder-frontend"
 
 # Images
 CONTROLLER_IMAGE="${AR_BASE}/${CONTROLLER_SERVICE}:latest"
 WORKER_IMAGE="${AR_BASE}/${WORKER_SERVICE}:latest"
+FRONTEND_IMAGE="${AR_BASE}/${FRONTEND_SERVICE}:latest"
 
 # Resources
 MEMORY="2Gi"
@@ -109,6 +112,16 @@ build_worker() {
     ok "Worker image built: ${WORKER_IMAGE}"
 }
 
+build_frontend() {
+    log "Building frontend image..."
+    docker build \
+        --platform linux/amd64 \
+        -t "${FRONTEND_IMAGE}" \
+        -f Dockerfile.frontend \
+        .
+    ok "Frontend image built: ${FRONTEND_IMAGE}"
+}
+
 push_controller() {
     log "Pushing controller image..."
     docker push "${CONTROLLER_IMAGE}"
@@ -119,6 +132,12 @@ push_worker() {
     log "Pushing worker image..."
     docker push "${WORKER_IMAGE}"
     ok "Worker image pushed"
+}
+
+push_frontend() {
+    log "Pushing frontend image..."
+    docker push "${FRONTEND_IMAGE}"
+    ok "Frontend image pushed"
 }
 
 deploy_worker() {
@@ -183,6 +202,34 @@ deploy_controller() {
         --region="${REGION}" \
         --format="value(status.url)")
     ok "Controller URL: ${CONTROLLER_URL}"
+    echo "${CONTROLLER_URL}" > .controller_url
+}
+
+deploy_frontend() {
+    # Read controller URL if available
+    if [ -f .controller_url ]; then
+        CONTROLLER_URL=$(cat .controller_url)
+    else
+        CONTROLLER_URL=$(gcloud run services describe "${CONTROLLER_SERVICE}" \
+            --project="${PROJECT_ID}" \
+            --region="${REGION}" \
+            --format="value(status.url)" 2>/dev/null || echo "https://API_URL_NOT_SET")
+    fi
+
+    log "Deploying ${FRONTEND_SERVICE} to Cloud Run..."
+    
+    gcloud run deploy "${FRONTEND_SERVICE}" \
+        --project="${PROJECT_ID}" \
+        --region="${REGION}" \
+        --image="${FRONTEND_IMAGE}" \
+        --memory="1Gi" \
+        --cpu="1" \
+        --allow-unauthenticated \
+        --set-env-vars="NEXT_PUBLIC_API_URL=${CONTROLLER_URL}" \
+        --min-instances=0 \
+        --max-instances=2 \
+        --quiet
+    ok "${FRONTEND_SERVICE} deployed (public)"
 }
 
 print_summary() {
@@ -201,6 +248,13 @@ print_summary() {
         --format="value(status.url)" 2>/dev/null || echo "not deployed")
     echo -e "  Controller: ${CTRL_URL}"
     echo -e "  Swagger UI: ${CTRL_URL}/docs"
+
+    FRONTEND_URL=$(gcloud run services describe "${FRONTEND_SERVICE}" \
+        --project="${PROJECT_ID}" \
+        --region="${REGION}" \
+        --format="value(status.url)" 2>/dev/null || echo "not deployed")
+    echo -e "  Dashboard:  ${FRONTEND_URL}"
+
     echo -e ""
     echo -e "  Project:    ${PROJECT_ID}"
     echo -e "  Region:     ${REGION}"
@@ -218,8 +272,10 @@ case "${CMD}" in
         configure_docker_auth
         build_controller
         build_worker
+        build_frontend
         push_controller
         push_worker
+        push_frontend
         ok "All images built and pushed!"
         ;;
     controller)
@@ -238,6 +294,14 @@ case "${CMD}" in
         deploy_worker
         print_summary
         ;;
+    frontend)
+        ensure_ar_repo
+        configure_docker_auth
+        build_frontend
+        push_frontend
+        deploy_frontend
+        print_summary
+        ;;
     all)
         echo -e "${BLUE}"
         echo "  ╔═══════════════════════════════════════════╗"
@@ -248,22 +312,25 @@ case "${CMD}" in
         ensure_ar_repo
         configure_docker_auth
 
-        # Build both
+        # Build all
         build_controller
         build_worker
+        build_frontend
 
-        # Push both
+        # Push all
         push_controller
         push_worker
+        push_frontend
 
-        # Deploy worker first (to get URL for controller)
+        # Deploy sequentially to pass URLs
         deploy_worker
         deploy_controller
+        deploy_frontend
 
         print_summary
         ;;
     *)
-        echo "Usage: ./deploy.sh {all|controller|worker|build}"
+        echo "Usage: ./deploy.sh {all|controller|worker|frontend|build}"
         exit 1
         ;;
 esac

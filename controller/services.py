@@ -6,10 +6,10 @@ Business logic for Firestore persistence and Cloud Tasks scheduling.
 
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 import google.auth
-from google.cloud import firestore, tasks_v2
+from google.cloud import firestore, tasks_v2, storage
 from google.protobuf import timestamp_pb2
 
 from controller.config import settings
@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 
 _firestore_client: firestore.Client | None = None
 _tasks_client: tasks_v2.CloudTasksClient | None = None
+_storage_client: storage.Client | None = None
 _service_account_email: str | None = None
 
 
@@ -36,6 +37,13 @@ def _get_tasks_client() -> tasks_v2.CloudTasksClient:
     if _tasks_client is None:
         _tasks_client = tasks_v2.CloudTasksClient()
     return _tasks_client
+
+
+def _get_storage_client() -> storage.Client:
+    global _storage_client
+    if _storage_client is None:
+        _storage_client = storage.Client(project=settings.GCP_PROJECT_ID)
+    return _storage_client
 
 
 def _get_service_account_email() -> str:
@@ -61,7 +69,32 @@ def _get_service_account_email() -> str:
     return _service_account_email
 
 
-# ─── Firestore ────────────────────────────────────────────────────────────────
+# ─── Cloud Storage Operations ───────────────────────────────────────────────────
+
+def generate_signed_url(blob_path: str, bucket_name: str = "kyc_id_cards", expiration_minutes: int = 15) -> str:
+    """Generate a V4 signed URL for downloading a blob."""
+    storage_client = _get_storage_client()
+    bucket = storage_client.bucket(bucket_name)
+    blob = bucket.blob(blob_path)
+    
+    # Strip gs:// prefix if passed by accident
+    if blob_path.startswith("gs://"):
+        parts = blob_path.split("/")
+        if len(parts) >= 4:
+            bucket_name = parts[2]
+            blob_path = "/".join(parts[3:])
+            bucket = storage_client.bucket(bucket_name)
+            blob = bucket.blob(blob_path)
+
+    url = blob.generate_signed_url(
+        version="v4",
+        expiration=timedelta(minutes=expiration_minutes),
+        method="GET",
+    )
+    return url
+
+
+# ─── Firestore Operations ────────────────────────────────────────────────────────────────
 
 def save_mission(request: CreateMissionRequest) -> str:
     """
@@ -83,6 +116,37 @@ def save_mission(request: CreateMissionRequest) -> str:
     _, doc_ref = collection.add(doc_data)
     logger.info(f"Mission saved → {doc_ref.id}")
     return doc_ref.id
+
+
+def get_all_missions() -> list[dict]:
+    db = _get_firestore_client()
+    docs = db.collection(settings.FIRESTORE_COLLECTION).order_by("created_at", direction=firestore.Query.DESCENDING).limit(50).stream()
+    
+    missions = []
+    for doc in docs:
+        data = doc.to_dict()
+        data["id"] = doc.id
+        # Convert DatetimeWithNanoseconds to ISO string
+        if "created_at" in data and hasattr(data["created_at"], "isoformat"):
+            data["created_at"] = data["created_at"].isoformat()
+        if "schedule_time" in data and hasattr(data["schedule_time"], "isoformat"):
+            data["schedule_time"] = data["schedule_time"].isoformat()
+        missions.append(data)
+    return missions
+
+
+def get_mission_executions(mission_id: str) -> list[dict]:
+    db = _get_firestore_client()
+    docs = db.collection(settings.FIRESTORE_COLLECTION).document(mission_id).collection("executions").stream()
+    
+    executions = []
+    for doc in docs:
+        data = doc.to_dict()
+        data["id"] = doc.id
+        if "executed_at" in data and hasattr(data["executed_at"], "isoformat"):
+            data["executed_at"] = data["executed_at"].isoformat()
+        executions.append(data)
+    return executions
 
 
 # ─── Cloud Tasks ──────────────────────────────────────────────────────────────

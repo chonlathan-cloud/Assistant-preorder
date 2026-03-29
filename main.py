@@ -14,8 +14,8 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from controller.config import settings
-from controller.schemas import CreateMissionRequest, CreateMissionResponse
-from controller.services import schedule_mission
+from controller.schemas import CreateMissionRequest, MissionResponse
+from controller.services import schedule_mission, get_all_missions, get_mission_executions, generate_signed_url
 
 # ─── Logging ──────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -27,8 +27,7 @@ logger = logging.getLogger(__name__)
 
 # ─── App ──────────────────────────────────────────────────────────────────────
 app = FastAPI(
-    title="Mission Controller",
-    description="Schedule Lazada shopping bot missions via Cloud Tasks",
+    title="Lazada Sniper Controller",
     version="1.0.0",
 )
 
@@ -54,7 +53,40 @@ async def health():
     }
 
 
-@app.post("/create-mission", response_model=CreateMissionResponse)
+@app.get("/missions")
+async def list_missions():
+    """List all missions, sorted by creation time."""
+    try:
+        missions = get_all_missions()
+        return {"missions": missions}
+    except Exception as e:
+        logger.error(f"List missions error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/missions/{mission_id}/results")
+async def list_mission_results(mission_id: str):
+    """Get the execution results for a specific mission."""
+    try:
+        executions = get_mission_executions(mission_id)
+        return {"mission_id": mission_id, "executions": executions}
+    except Exception as e:
+        logger.error(f"Get mission results error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/signed-url")
+async def get_signed_url(path: str):
+    """Generate a signed URL for a GCS blob."""
+    try:
+        url = generate_signed_url(path)
+        return {"signed_url": url}
+    except Exception as e:
+        logger.error(f"Signed URL error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/create-mission", response_model=MissionResponse)
 async def create_mission(request: CreateMissionRequest):
     """
     Create a new shopping mission.
