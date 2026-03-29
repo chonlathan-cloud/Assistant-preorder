@@ -33,3 +33,5 @@ class ExecuteResponse(BaseModel):
     screenshots: List[str] = []
     error: Optional[str] = None
     duration_seconds: float = 0.0
+    ai_usage_count: int = 0
+    ai_logs: List[str] = []

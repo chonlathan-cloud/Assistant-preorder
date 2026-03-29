@@ -49,6 +49,8 @@ WORKER_ENV_VARS+=",SESSION_FILE_ACC_1=session_acc_1.json"
 WORKER_ENV_VARS+=",SESSION_FILE_ACC_2=session_acc_2.json"
 WORKER_ENV_VARS+=",PAGE_LOAD_TIMEOUT=30000"
 WORKER_ENV_VARS+=",MAX_RETRY=3"
+WORKER_ENV_VARS+=",VERTEX_AI_LOCATION=asia-southeast1"
+WORKER_ENV_VARS+=",GEMINI_MODEL=gemini-2.5-flash"
 
 # ─── Colors ──────────────────────────────────────────────────
 RED='\033[0;31m'
@@ -90,6 +92,7 @@ configure_docker_auth() {
 build_controller() {
     log "Building controller image..."
     docker build \
+        --platform linux/amd64 \
         -t "${CONTROLLER_IMAGE}" \
         -f Dockerfile \
         .
@@ -99,6 +102,7 @@ build_controller() {
 build_worker() {
     log "Building worker image (this may take a while — Chromium)..."
     docker build \
+        --platform linux/amd64 \
         -t "${WORKER_IMAGE}" \
         -f Dockerfile.worker \
         .

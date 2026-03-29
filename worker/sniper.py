@@ -25,6 +25,7 @@ from playwright_stealth import Stealth
 
 from worker.config import worker_settings
 from worker.schemas import ExecuteRequest, VariantItem
+from worker.visual_intelligence import find_element_on_screen
 
 logger = logging.getLogger(__name__)
 
@@ -85,6 +86,8 @@ class SniperResult:
         self.screenshots: list[str] = []
         self.errors: list[str] = []
         self.status: str = "pending"
+        self.ai_usage_count: int = 0
+        self.ai_logs: list[str] = []
 
     @property
     def is_success(self) -> bool:
@@ -112,9 +115,46 @@ async def _load_local_storage(page: Page, local_storage: dict[str, str]) -> None
     logger.info(f"Injected {len(local_storage)} localStorage entries")
 
 
+async def _use_visual_fallback(page: Page, label: str, result: SniperResult) -> bool:
+    """Takes a screenshot, asks Gemini to find the element, and clicks it if found."""
+    logger.info(f"🧠 Asking Gemini Vision to find: '{label}'")
+    try:
+        ss_bytes = await page.screenshot()
+        result.ai_usage_count += 1
+        
+        # Get coordinates from Gemini
+        coords, log_msg = find_element_on_screen(
+            screenshot_bytes=ss_bytes,
+            label_to_find=label,
+            viewport_width=1366,
+            viewport_height=768,
+        )
+        
+        result.ai_logs.append(log_msg)
+        logger.info(f"🧠 Vision Result: {log_msg}")
+
+        if coords:
+            px_x, px_y = coords
+            await page.mouse.click(px_x, px_y)
+            logger.info(f"🧠 AI Fallback clicked ({px_x}, {px_y}) successfully")
+            await page.wait_for_timeout(1000)
+            return True
+            
+        return False
+    except Exception as e:
+        logger.error(f"❌ Visual fallback failed: {e}", exc_info=True)
+        return False
+
+
+async def _clear_overlays(page: Page, result: SniperResult) -> None:
+    """Check for popups/overlays and use AI to dismiss them."""
+    logger.info("🧠 Checking for overlays/pop-ups to clear...")
+    await _use_visual_fallback(page, "Close button or X icon to dismiss pop-up", result)
+
+
 # ─── Variant Selection ────────────────────────────────────────────────────────
 
-async def _select_variant(page: Page, variant_name: str) -> bool:
+async def _select_variant(page: Page, variant_name: str, result: SniperResult) -> bool:
     """
     Click the variant button matching the given name.
     Tries multiple strategies: exact text, partial text, contains.
@@ -143,7 +183,12 @@ async def _select_variant(page: Page, variant_name: str) -> bool:
         except Exception:
             continue
 
-    logger.warning(f"⚠️ Could not find variant '{variant_name}'")
+    # AI Fallback if all strategies fail
+    logger.warning(f"⚠️ DOM locators failed for variant '{variant_name}'. Trying AI fallback...")
+    if await _use_visual_fallback(page, f"Button or image labeled '{variant_name}'", result):
+        return True
+
+    logger.error(f"❌ Completely failed to find variant '{variant_name}'")
     return False
 
 
@@ -221,7 +266,7 @@ async def _wait_for_buy_now(page: Page) -> bool:
 
 # ─── Checkout Flow ─────────────────────────────────────────────────────────────
 
-async def _click_buy_now(page: Page) -> bool:
+async def _click_buy_now(page: Page, result: SniperResult) -> bool:
     """Click the Buy Now button."""
     try:
         buy_now = page.locator(SELECTORS["buy_now"]).first
@@ -237,7 +282,13 @@ async def _click_buy_now(page: Page) -> bool:
             await page.wait_for_load_state("domcontentloaded")
             return True
     except Exception as e:
-        logger.error(f"❌ Buy Now click failed: {e}")
+        logger.error(f"❌ DOM Buy Now click failed: {e}")
+
+    # AI Fallback
+    logger.warning("⚠️ DOM locators failed for Buy Now. Trying AI fallback...")
+    if await _use_visual_fallback(page, "Buy Now button (usually orange/red) or ซื้อสินค้า", result):
+        await page.wait_for_load_state("domcontentloaded")
+        return True
 
     return False
 
@@ -263,7 +314,7 @@ async def _select_payment_method(page: Page) -> bool:
     return False  # Not fatal; user may have pre-set default
 
 
-async def _place_order(page: Page) -> bool:
+async def _place_order(page: Page, result: SniperResult) -> bool:
     """Click Place Order on checkout page."""
     try:
         place_btn = page.locator(SELECTORS["place_order"]).first
@@ -273,7 +324,14 @@ async def _place_order(page: Page) -> bool:
             await page.wait_for_load_state("domcontentloaded")
             return True
     except Exception as e:
-        logger.error(f"❌ Place Order failed: {e}")
+        logger.error(f"❌ DOM Place Order failed: {e}")
+
+    # AI Fallback
+    logger.warning("⚠️ DOM Place Order failed. Checking for obstacles or trying AI fallback...")
+    await _clear_overlays(page, result)
+    if await _use_visual_fallback(page, "Place Order button (usually orange) or สั่งซื้อ", result):
+        await page.wait_for_load_state("domcontentloaded")
+        return True
 
     return False
 
@@ -356,7 +414,7 @@ async def execute_snipe(
 
                     try:
                         # Select variant
-                        if not await _select_variant(page, variant.name):
+                        if not await _select_variant(page, variant.name, result):
                             result.errors.append(f"Variant not found: {variant.name}")
                             ss = await _take_screenshot(page, f"variant_fail_{variant.name}")
                             result.screenshots.append(ss)
@@ -366,7 +424,7 @@ async def execute_snipe(
                         await _set_quantity(page, variant.qty)
 
                         # Click Buy Now (with flash-sale polling)
-                        if not await _click_buy_now(page):
+                        if not await _click_buy_now(page, result):
                             result.errors.append(f"Buy Now failed for {variant.name}")
                             ss = await _take_screenshot(page, f"buynow_fail_{variant.name}")
                             result.screenshots.append(ss)
@@ -383,7 +441,7 @@ async def execute_snipe(
                         await _select_payment_method(page)
 
                         # Place Order
-                        if await _place_order(page):
+                        if await _place_order(page, result):
                             # Check success
                             if await _check_order_success(page):
                                 result.orders_placed += 1

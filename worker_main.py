@@ -112,6 +112,8 @@ async def execute(request: ExecuteRequest):
                 screenshots=result.screenshots,
                 error="; ".join(result.errors) if result.errors else None,
                 duration_seconds=round(duration, 2),
+                ai_usage_count=result.ai_usage_count,
+                ai_logs=result.ai_logs,
             )
 
             # Update mission-level status if all done
@@ -124,6 +126,7 @@ async def execute(request: ExecuteRequest):
         logger.info(f"\n{'='*60}")
         logger.info(f"  📊 RESULT: {result.status.upper()}")
         logger.info(f"  🛒 Orders: {result.orders_placed}")
+        logger.info(f"  🤖 AI Assists: {result.ai_usage_count}")
         logger.info(f"  ⏱️ Duration: {duration:.2f}s")
         logger.info(f"{'='*60}\n")
 
@@ -135,6 +138,8 @@ async def execute(request: ExecuteRequest):
             screenshots=result.screenshots,
             error="; ".join(result.errors) if result.errors else None,
             duration_seconds=round(duration, 2),
+            ai_usage_count=result.ai_usage_count,
+            ai_logs=result.ai_logs,
         )
 
     except Exception as e:

@@ -13,3 +13,4 @@ google-auth>=2.36.0
 
 # ─── Phase 3: Sniper Worker ───
 google-cloud-storage>=2.19.0
+google-cloud-aiplatform>=1.73.0

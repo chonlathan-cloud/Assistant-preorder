@@ -32,6 +32,8 @@ def log_execution(
     screenshots: list[str] | None = None,
     error: Optional[str] = None,
     duration_seconds: float = 0.0,
+    ai_usage_count: int = 0,
+    ai_logs: list[str] | None = None,
 ) -> None:
     """
     Log the execution result as a sub-document under the mission.
@@ -54,6 +56,8 @@ def log_execution(
         "screenshots": screenshots or [],
         "error": error,
         "duration_seconds": duration_seconds,
+        "ai_usage_count": ai_usage_count,
+        "ai_logs": ai_logs or [],
         "executed_at": firestore.SERVER_TIMESTAMP,
     }
 

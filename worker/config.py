@@ -20,6 +20,10 @@ class WorkerSettings(BaseSettings):
     GCP_PROJECT_ID: str
     GCP_REGION: str = "asia-southeast1"
 
+    # Vertex AI (Gemini)
+    VERTEX_AI_LOCATION: str = "asia-southeast1"
+    GEMINI_MODEL: str = "gemini-2.5-flash"
+
     # Firestore
     FIRESTORE_COLLECTION: str = "missions"
 
